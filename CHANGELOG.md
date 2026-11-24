@@ -6,7 +6,7 @@ Bounty Ledger 1.0.0 to 1.1.6 and NCPD Uplink 1.0.0 were built on game version 2.
 ### Fixed
 - A warrant target killed by someone else (a gang, a police officer, a car) is no longer journalled as the player's kill; the NCPD Uplink shows it as "died (not by V)".
 
-Not run in game in a written test.
+In use in the author's game and working; no written test record.
 
 ## Bounty Ledger 1.1.6 - 2026-11-07
 ### Fixed

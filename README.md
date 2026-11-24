@@ -1,7 +1,7 @@
 # Bounty Ledger
 
 NCPD street bounties as a warrant system: price by wanted stars, more for bringing targets in alive, and a delayed payout in one batch, with an NCPD Uplink window for the claim file, for Cyberpunk 2077. Single-player only.
-Version: Bounty Ledger 1.1.7, NCPD Uplink 1.0.0 | For game version 2.5 | Status: 1.0.0 tested in game on 2.31 (prices, alive claim, death downgrade, scan rule and batching seen; the payout itself was not reached in that test); 1.1.x not run in game in a written test; the Uplink window has been seen running in game (screenshot below)
+Version: Bounty Ledger 1.1.7, NCPD Uplink 1.0.0 | For game version 2.5 | Status: 1.0.0 tested in game on 2.31 (prices, alive claim, death downgrade, scan rule and batching seen; the payout itself was not reached in that test); Bounty Ledger 1.1.7 and NCPD Uplink 1.0.0 in use in my game and working; no written test record
 
 > This is an unofficial fan work and is not approved/endorsed by CD PROJEKT RED. No game files are included.
 
@@ -101,9 +101,9 @@ NCPD Uplink hotkeys in CET > Bindings, unbound by default: "Pin NCPD uplink" kee
 | Version | Game | Result |
 |---|---|---|
 | Ledger 1.0.0 | 2.31 | Tested in game, 2026-11-06: prices, alive claim, death downgrade, scan rule and batching seen. The payout itself was not reached in that test. |
-| Ledger 1.0.1 to 1.1.6, Uplink 1.0.0 | 2.31 | No written in-game test. |
-| Ledger 1.1.7 | 2.5 | Not run in game in a written test. |
-| Screenshot | 2.5 | The window at the top was captured in game with the mod running. Its lifetime line shows 41 payouts and 117 claims, so batches have been paid in play; its journal shows claims lost because the target was not scanned. The version on screen was not recorded. This is not a test pass. |
+| Ledger 1.0.1 to 1.1.6 | 2.31 | No written in-game test. |
+| Ledger 1.1.7, Uplink 1.0.0 | 2.5 | In use in the author's game and working (author's statement, 2026-11-24). No written test record. |
+| Screenshot | 2.5 | The window at the top was captured in game with the mod running. Its lifetime line shows 41 payouts and 117 claims, so batches have been paid in play; its journal shows claims lost because the target was not scanned. The version on screen was not recorded. |
 
 ## Compatibility
 
