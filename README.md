@@ -3,6 +3,8 @@
 NCPD street bounties as a warrant system: price by wanted stars, more for bringing targets in alive, and a delayed payout in one batch, with an NCPD Uplink window for the claim file, for Cyberpunk 2077. Single-player only.
 Version: Bounty Ledger 1.1.7, NCPD Uplink 1.0.0 | For game version 2.5 | Status: 1.0.0 tested in game on 2.31 (prices, alive claim, death downgrade, scan rule and batching seen; the payout itself was not reached in that test); Bounty Ledger 1.1.7 and NCPD Uplink 1.0.0 in use in my game and working; no written test record
 
+**Download:** [latest release](https://github.com/penicius-code/cp2077-bounty-ledger/releases/latest) (zip; install steps below)
+
 > This is an unofficial fan work and is not approved/endorsed by CD PROJEKT RED. No game files are included.
 
 <img src="docs/media/bounty-ledger.png" width="480" alt="The NCPD Uplink window in game: link status, an empty claims list, a journal of claims lost for lack of a scan, and the lifetime payout total">
@@ -58,7 +60,7 @@ Requirements are not bundled. Install them first.
 ## Install
 
 1. Install the requirements above.
-2. Copy the contents of `package/` into the game folder, so that `r6\scripts\zz_CyberslopBountyLedger\CyberslopBountyLedger.reds` exists.
+2. Download the zip from the [latest release](https://github.com/penicius-code/cp2077-bounty-ledger/releases/latest) (the same files as `package/` in this repository) and extract it into the game folder, so that `r6\scripts\zz_CyberslopBountyLedger\CyberslopBountyLedger.reds` exists.
 3. Start the game and load a save. Mod Settings shows "Cyberslop Bounty Ledger"; the CET overlay shows the "Cyberslop NCPD Uplink" window.
 
 ## Uninstall / roll back
