@@ -107,6 +107,15 @@ func CSBL_NDEUnmark(npc: ref<NPCPuppet>) -> Void {}
 
 // ---------------------------------------------------------------- warrants
 
+public class CSBLWarrantRequest extends ScriptableSystemRequest {
+  public let npc: wref<NPCPuppet>;
+  public let hash: Uint32;
+  public let record: TweakDBID;
+  public let byV: Bool;
+  public let killed: Bool;
+  public let arrest: Bool;
+}
+
 public class CSBLWarrants extends ScriptableSystem {
 
   // This session: every NPC already checked, and the flagged warrant targets.
@@ -203,7 +212,7 @@ public class CSBLWarrants extends ScriptableSystem {
     return true;
   }
 
-  // Scanner read this NPC (NPCPuppet.CompileScannerChunks wrap in CyberslopBountyLedger.reds).
+  // Scanner read this NPC (1.1.8: from BountyLedger.OnCSBLScanRequest, the ledger's own thread).
   public final static func OnScanned(npc: ref<NPCPuppet>) -> Void {
     let gi: GameInstance;
     let w: ref<CSBLWarrants>;
@@ -225,6 +234,13 @@ public class CSBLWarrants extends ScriptableSystem {
     };
     h = EntityID.GetHash(npc.GetEntityID());
     if ArrayContains(w.m_seen, h) {
+      // 1.1.9: the same target streamed out and back in is a new NPC object; give it its flags back
+      if ArrayContains(w.m_flagged, h) {
+        npc.csblWarrantFlagged = true;
+        if ArrayContains(w.m_killed, h) {
+          npc.csblWarrantKilled = true;
+        };
+      };
       return;
     };
     ArrayPush(w.m_seen, h);
@@ -252,6 +268,7 @@ public class CSBLWarrants extends ScriptableSystem {
     ArrayPush(w.m_flaggedLabel, text);
     ArrayPush(w.m_flaggedIDs, npc.GetEntityID());
     ArrayPush(w.m_flaggedStars, stars);
+    npc.csblWarrantFlagged = true;
     ledger.Note(9, pay, npc.GetRecordID(), stars, text);
     if s.warrantLegalCover {
       CSBL_NDEMarkHandled(npc);
@@ -262,59 +279,77 @@ public class CSBLWarrants extends ScriptableSystem {
     ledger.Log("warrant flagged " + TDBID.ToStringDEBUG(npc.GetRecordID()) + " | " + text + " | " + IntToString(stars) + " stars | fee " + IntToString(pay) + (s.warrantLegalCover ? " | lawful arrest" : ""));
   }
 
-  // Knocked out or killed (ScriptedPuppet.RewardKiller wrap in CyberslopBountyLedger.reds).
+  // Knocked out or killed (ScriptedPuppet.RewardKiller wrap, entity thread). 1.1.8: only the NPC's own flags change
+  // here; the lists are updated in OnCSBLWarrantRequest.
   public final static func OnNeutralized(puppet: ref<ScriptedPuppet>, killer: wref<GameObject>, killType: gameKillType, nonlethal: Bool) -> Void {
     let npc: ref<NPCPuppet> = puppet as NPCPuppet;
-    let gi: GameInstance;
     let w: ref<CSBLWarrants>;
-    let ledger: ref<BountyLedger>;
-    let h: Uint32;
-    let i: Int32;
-    if !IsDefined(npc) {
+    let req: ref<CSBLWarrantRequest>;
+    if !IsDefined(npc) || !npc.csblWarrantFlagged {
       return;
     };
-    gi = npc.GetGame();
-    w = CSBLWarrants.Get(gi);
-    ledger = BountyLedger.Get(gi);
-    if !IsDefined(w) || !IsDefined(ledger) || ArraySize(w.m_flagged) == 0 {
+    w = CSBLWarrants.Get(npc.GetGame());
+    if !IsDefined(w) {
       return;
     };
-    h = EntityID.GetHash(npc.GetEntityID());
-    i = ArrayFindFirst(w.m_flagged, h);
-    if i < 0 {
-      return;
-    };
+    req = new CSBLWarrantRequest();
+    req.npc = npc;
+    req.hash = EntityID.GetHash(npc.GetEntityID());
+    req.record = npc.GetRecordID();
+    req.byV = IsDefined(killer) && killer.IsPlayer();
+    req.killed = Equals(killType, gameKillType.Normal) || npc.IsDead();
+    req.arrest = Equals(killType, gameKillType.Defeat) && nonlethal;
     // A kill is a killing, warrant or not (also finishing a target already brought down):
     // drop the lawful-arrest flags now, inside RewardKiller, before vanilla's
     // CheckIfPreventionShouldReact reports the death (GameObject.FindAndRewardKiller).
-    if Equals(killType, gameKillType.Normal) || npc.IsDead() {
+    if req.killed {
+      npc.csblWarrantKilled = true;
       // 1.1.2 set the saved PS flag at scan time; clear it on saves that still carry it.
       npc.GetPuppetPS().SetIsPreventionNotified(false);
       CSBL_NDEUnmark(npc);
+    };
+    w.QueueRequest(req);
+  }
+
+  private final func OnCSBLWarrantRequest(request: ref<CSBLWarrantRequest>) -> Void {
+    let ledger: ref<BountyLedger> = BountyLedger.Get(this.GetGameInstance());
+    let npc: ref<NPCPuppet>;
+    let h: Uint32;
+    let i: Int32;
+    if !IsDefined(request) || !IsDefined(ledger) {
+      return;
+    };
+    h = request.hash;
+    i = ArrayFindFirst(this.m_flagged, h);
+    if i < 0 {
+      return;
+    };
+    if request.killed {
       // 1.1.7: only V's kills go in the journal as a warrant killing
-      if !IsDefined(killer) || !killer.IsPlayer() {
-        if !ArrayContains(w.m_diedOther, h) {
-          ArrayPush(w.m_diedOther, h);
+      if !request.byV {
+        if !ArrayContains(this.m_diedOther, h) {
+          ArrayPush(this.m_diedOther, h);
         };
-        ledger.Log("warrant target died, not by V: " + TDBID.ToStringDEBUG(npc.GetRecordID()) + " | " + w.m_flaggedLabel[i] + " | no claim");
+        ledger.Log("warrant target died, not by V: " + TDBID.ToStringDEBUG(request.record) + " | " + this.m_flaggedLabel[i] + " | no claim");
         return;
       };
-      if !ArrayContains(w.m_killed, h) {
-        ArrayPush(w.m_killed, h);
-        ledger.Note(10, 0, npc.GetRecordID(), w.m_flaggedStars[i], w.m_flaggedLabel[i]);
+      if !ArrayContains(this.m_killed, h) {
+        ArrayPush(this.m_killed, h);
+        ledger.Note(10, 0, request.record, this.m_flaggedStars[i], this.m_flaggedLabel[i]);
       };
-      if !ArrayContains(w.m_served, h) {
-        ArrayPush(w.m_served, h);
+      if !ArrayContains(this.m_served, h) {
+        ArrayPush(this.m_served, h);
       };
-      ledger.Log("warrant target killed " + TDBID.ToStringDEBUG(npc.GetRecordID()) + " | " + w.m_flaggedLabel[i] + " | no fee (alive only), reported as a killing");
+      ledger.Log("warrant target killed " + TDBID.ToStringDEBUG(request.record) + " | " + this.m_flaggedLabel[i] + " | no fee (alive only), reported as a killing");
       return;
     };
-    if ArrayContains(w.m_served, h) || !IsDefined(killer) || !killer.IsPlayer() {
+    if ArrayContains(this.m_served, h) || !request.byV {
       return;
     };
-    if Equals(killType, gameKillType.Defeat) && nonlethal {
-      if ledger.FileWarrantClaim(npc, w.m_flaggedPay[i], w.m_flaggedLabel[i], w.m_flaggedStars[i]) {
-        ArrayPush(w.m_served, h);
+    npc = request.npc;
+    if request.arrest && IsDefined(npc) {
+      if ledger.FileWarrantClaim(npc, this.m_flaggedPay[i], this.m_flaggedLabel[i], this.m_flaggedStars[i]) {
+        ArrayPush(this.m_served, h);
       };
     };
   }
@@ -323,22 +358,18 @@ public class CSBLWarrants extends ScriptableSystem {
   // only (m_flagged is not saved), nothing is written on the NPC; a killing is reported as usual.
   public final static func LawfulArrest(target: wref<GameObject>) -> Bool {
     let npc: ref<NPCPuppet> = target as NPCPuppet;
-    let w: ref<CSBLWarrants>;
     let s: ref<BountyLedgerSettings>;
-    let h: Uint32;
     if !IsDefined(npc) || npc.IsDead() {
       return false;
     };
-    w = CSBLWarrants.Get(npc.GetGame());
-    if !IsDefined(w) || ArraySize(w.m_flagged) == 0 {
+    if !npc.csblWarrantFlagged || npc.csblWarrantKilled {
       return false;
     };
     s = BountyLedgerSettings.Get(npc.GetGame());
     if !IsDefined(s) || !s.enabled || !s.warrants || !s.warrantLegalCover {
       return false;
     };
-    h = EntityID.GetHash(npc.GetEntityID());
-    return ArrayContains(w.m_flagged, h) && !ArrayContains(w.m_killed, h);
+    return true;
   }
 
   // For the Biomonitor and NCPD Uplink windows / console.

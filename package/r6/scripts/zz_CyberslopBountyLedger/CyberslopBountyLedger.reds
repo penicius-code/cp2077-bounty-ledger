@@ -1,3 +1,9 @@
+// 1.2.0 (2026-11-26): getters for the NCPD Uplink window (pending / lifetime totals, due time, rates), because
+// CET 1.38.1 reads a script system's fields as nil (the window showed 0). Nothing else changed.
+// 1.1.9 (2026-11-26): a warrant target that streams back in gets its per-NPC flags back on its next scan.
+// 1.1.8 (2026-11-26): thread-safe. Bounty, kill and scan hooks run on entity job threads; they now only mark the NPC
+// and queue requests, and the ledger / warrant lists change only in request handlers (the crash class of CTD
+// exe+0x270242: a list pushed from two threads at once).
 // Cyberslop Bounty Ledger 1.1.3 (2026-11-06; 1.0.1: processing time default 10 game min;
 // 1.1.0: Deep Scan warrants, see CyberslopWarrants.reds; Cashflow source tag on payouts;
 // 1.1.1: a claimed target V tags for I Want Them Alive pickup is withdrawn from the NCPD batch;
@@ -202,6 +208,12 @@ public class BountyLedgerSettings extends ScriptableSystem {
     ModSettings.UnregisterListenerToClass(this);
   }
 
+  // 1.2.0: for the CET Uplink window (CET 1.38.1 reads these fields as nil); prices: StarPrice(1..5).
+  public final func IsEnabled() -> Bool = this.enabled
+  public final func GetAlivePercent() -> Int32 = this.alivePercent
+  public final func GetDeadPercent() -> Int32 = this.deadPercent
+  public final func GetProcessingMinutes() -> Int32 = this.processingMinutes
+
   public final func StarPrice(stars: Int32) -> Int32 {
     if stars <= 1 { return this.price1; };
     if stars == 2 { return this.price2; };
@@ -229,6 +241,43 @@ public class BountyLedgerTick extends DelayCallback {
 }
 
 // ---------------------------------------------------------------- the ledger
+
+// 1.1.8: per-NPC marks, written only for that NPC (no shared list touched from its event thread).
+@addField(ScriptedPuppet) public let csblCtxSet: Bool;
+@addField(ScriptedPuppet) public let csblCtxAlive: Bool;
+@addField(NPCPuppet) public let csblScanQueued: Bool;
+@addField(NPCPuppet) public let csblWarrantFlagged: Bool;
+@addField(NPCPuppet) public let csblWarrantKilled: Bool;
+
+public class CSBLClaimRequest extends ScriptableSystemRequest {
+  public let target: wref<NPCPuppet>;
+  public let id: EntityID;
+  public let hash: Uint32;
+  public let record: TweakDBID;
+  public let stars: Int32;
+  public let amount: Int32;
+  public let alive: Bool;
+  public let how: String;
+  public let scannedNative: Bool;
+}
+
+public class CSBLNoteRequest extends ScriptableSystemRequest {
+  public let kind: Int32;
+  public let amount: Int32;
+  public let record: TweakDBID;
+  public let aux: Int32;
+  public let label: String;
+}
+
+public class CSBLNeutralizeRequest extends ScriptableSystemRequest {
+  public let hash: Uint32;
+  public let killed: Bool;
+}
+
+public class CSBLScanRequest extends ScriptableSystemRequest {
+  public let npc: wref<NPCPuppet>;
+  public let hash: Uint32;
+}
 
 public class BountyLedger extends ScriptableSystem {
 
@@ -282,7 +331,6 @@ public class BountyLedger extends ScriptableSystem {
     this.RestoreJournal();
     // Scans belong to this session (1.1.2): an old hash must not stand in for a new NPC.
     ArrayClear(this.m_scanned);
-    this.m_ctxSet = false;
     this.m_tickQueued = false;
     this.ScheduleTick();
   }
@@ -319,6 +367,23 @@ public class BountyLedger extends ScriptableSystem {
   // Kinds: 1 claim alive, 2 claim deceased, 3 warrant served, 4 died in custody, 5 withdrawn (FixerNet),
   // 6 transfer cleared (aux = claims), 7 no claim, not scanned, 8 no claim, no NCPD link,
   // 9 warrant flagged (aux = stars), 10 warrant target killed.
+  // 1.1.8: for event-thread callers; the journal lists change in the handler.
+  public final func NoteLater(kind: Int32, amount: Int32, rec: TweakDBID, aux: Int32, label: String) -> Void {
+    let req: ref<CSBLNoteRequest> = new CSBLNoteRequest();
+    req.kind = kind;
+    req.amount = amount;
+    req.record = rec;
+    req.aux = aux;
+    req.label = label;
+    this.QueueRequest(req);
+  }
+
+  private final func OnCSBLNoteRequest(request: ref<CSBLNoteRequest>) -> Void {
+    if IsDefined(request) {
+      this.Note(request.kind, request.amount, request.record, request.aux, request.label);
+    };
+  }
+
   public final func Note(kind: Int32, amount: Int32, rec: TweakDBID, aux: Int32, label: String) -> Void {
     ArrayPush(this.m_jTime, this.Now());
     ArrayPush(this.m_jKind, kind);
@@ -425,6 +490,16 @@ public class BountyLedger extends ScriptableSystem {
     if this.openedAt > 0.0 || !IsDefined(s) { return this.openedAt; };
     return this.dueAt - Cast<Float>(s.processingMinutes) * 60.0;
   }
+  // 1.2.0: CET 1.38.1 reads a script system's fields as nil; the Uplink window reads them through these.
+  public final func GetPendingTotal() -> Int32 = this.pendingTotal
+  public final func GetPendingClaims() -> Int32 = this.pendingClaims
+  public final func GetPendingDeceased() -> Int32 = this.pendingDeceased
+  public final func GetDueAt() -> Float = this.dueAt
+  public final func GetLifetimePaid() -> Int32 = this.lifetimePaid
+  public final func GetLifetimeClaims() -> Int32 = this.lifetimeClaims
+  public final func GetLifetimeBatches() -> Int32 = this.lifetimeBatches
+  public final func GetLastPayoutAt() -> Float = this.lastPayoutAt
+  public final func GetLastPayoutAmount() -> Int32 = this.lastPayoutAmount
   public final func JournalCount() -> Int32 = ArraySize(this.m_jTime)
   public final func JournalTime(i: Int32) -> Float {
     if i < 0 || i >= ArraySize(this.m_jTime) { return 0.0; };
@@ -574,8 +649,36 @@ public class BountyLedger extends ScriptableSystem {
 
   // --- scan evidence
 
+  // 1.1.8: called from the scanner hook (any thread); one request per NPC.
+  public final func QueueScan(npc: ref<NPCPuppet>) -> Void {
+    let req: ref<CSBLScanRequest>;
+    if !IsDefined(npc) || npc.csblScanQueued {
+      return;
+    };
+    npc.csblScanQueued = true;
+    req = new CSBLScanRequest();
+    req.npc = npc;
+    req.hash = EntityID.GetHash(npc.GetEntityID());
+    this.QueueRequest(req);
+  }
+
+  private final func OnCSBLScanRequest(request: ref<CSBLScanRequest>) -> Void {
+    let npc: ref<NPCPuppet>;
+    if !IsDefined(request) {
+      return;
+    };
+    this.NoteScannedHash(request.hash);
+    npc = request.npc;
+    if IsDefined(npc) {
+      CSBLWarrants.OnScanned(npc);
+    };
+  }
+
   public final func NoteScanned(id: EntityID) -> Void {
-    let h: Uint32 = EntityID.GetHash(id);
+    this.NoteScannedHash(EntityID.GetHash(id));
+  }
+
+  private final func NoteScannedHash(h: Uint32) -> Void {
     if ArrayContains(this.m_scanned, h) {
       return;
     };
@@ -590,13 +693,23 @@ public class BountyLedger extends ScriptableSystem {
 
   // --- neutralization context
 
+  // RewardKiller hook (entity thread): marks the NPC for CompleteBounty, queues the rest.
   public final func BeginNeutralize(puppet: ref<ScriptedPuppet>, killType: gameKillType, nonlethal: Bool) -> Void {
-    let h: Uint32 = EntityID.GetHash(puppet.GetEntityID());
-    this.m_ctxHash = h;
-    this.m_ctxSet = true;
-    this.m_ctxAlive = Equals(killType, gameKillType.Defeat) && nonlethal && !puppet.IsDead();
-    if Equals(killType, gameKillType.Normal) {
-      this.DowngradeIfClaimedAlive(h, "died");
+    let req: ref<CSBLNeutralizeRequest>;
+    puppet.csblCtxSet = true;
+    puppet.csblCtxAlive = Equals(killType, gameKillType.Defeat) && nonlethal && !puppet.IsDead();
+    req = new CSBLNeutralizeRequest();
+    req.hash = EntityID.GetHash(puppet.GetEntityID());
+    req.killed = Equals(killType, gameKillType.Normal);
+    this.QueueRequest(req);
+  }
+
+  private final func OnCSBLNeutralizeRequest(request: ref<CSBLNeutralizeRequest>) -> Void {
+    if !IsDefined(request) {
+      return;
+    };
+    if request.killed {
+      this.DowngradeIfClaimedAlive(request.hash, "died");
     };
     if this.pendingClaims > 0 {
       this.ScheduleTick();
@@ -604,9 +717,7 @@ public class BountyLedger extends ScriptableSystem {
   }
 
   public final func EndNeutralize(puppet: ref<ScriptedPuppet>) -> Void {
-    if this.m_ctxSet && this.m_ctxHash == EntityID.GetHash(puppet.GetEntityID()) {
-      this.m_ctxSet = false;
-    };
+    puppet.csblCtxSet = false;
   }
 
   private final func DowngradeIfClaimedAlive(h: Uint32, why: String) -> Void {
@@ -634,14 +745,11 @@ public class BountyLedger extends ScriptableSystem {
     let amount: Int32;
     let hasLink: Bool;
     let scannedNative: Bool;
-    let scannedUI: Bool;
     let alive: Bool;
-    let pay: Int32;
-    let alivePay: Int32;
-    let deadPay: Int32;
     let how: String;
     let name: String;
-    if !IsDefined(player) || !IsDefined(s) || bounty.m_awarded || ArrayContains(this.m_claimHashes, h) {
+    let req: ref<CSBLClaimRequest>;
+    if !IsDefined(player) || !IsDefined(s) || bounty.m_awarded {
       return;
     };
     if ArraySize(bounty.m_transgressions) <= 0 {
@@ -660,23 +768,57 @@ public class BountyLedger extends ScriptableSystem {
     if amount <= 0 || !hasLink {
       this.Log("no claim " + name + " | price " + IntToString(amount) + (hasLink ? "" : " | optics have no NCPD link"));
       if amount > 0 {
-        this.Note(8, amount, target.GetRecordID(), 0, "");
+        this.NoteLater(8, amount, target.GetRecordID(), 0, "");
       };
       return;
     };
     scannedNative = target.IsScanned();
-    scannedUI = ArrayContains(this.m_scanned, h);
-    if s.requireScan && !scannedNative && !scannedUI {
-      this.Log("no claim " + name + " | not scanned | price " + IntToString(amount));
-      this.Note(7, (amount * s.alivePercent + 50) / 100, target.GetRecordID(), 0, "");
-      return;
-    };
-    if this.m_ctxSet && this.m_ctxHash == h {
-      alive = this.m_ctxAlive;
+    if target.csblCtxSet {
+      alive = target.csblCtxAlive;
       how = alive ? "alive" : "dead";
     } else {
       alive = !target.IsDead() && ScriptedPuppet.IsUnconscious(target);
       how = alive ? "alive(state)" : "dead(state)";
+    };
+    req = new CSBLClaimRequest();
+    req.target = target;
+    req.id = target.GetEntityID();
+    req.hash = h;
+    req.record = target.GetRecordID();
+    req.stars = BountyLedger.ClassStars(target);
+    req.amount = amount;
+    req.alive = alive;
+    req.how = how;
+    req.scannedNative = scannedNative;
+    this.QueueRequest(req);
+  }
+
+  private final func OnCSBLClaimRequest(request: ref<CSBLClaimRequest>) -> Void {
+    let s: ref<BountyLedgerSettings> = this.Settings();
+    let h: Uint32;
+    let amount: Int32;
+    let scannedNative: Bool;
+    let scannedUI: Bool;
+    let alive: Bool;
+    let pay: Int32;
+    let alivePay: Int32;
+    let deadPay: Int32;
+    let how: String;
+    let name: String;
+    if !IsDefined(request) || !IsDefined(s) || ArrayContains(this.m_claimHashes, request.hash) {
+      return;
+    };
+    h = request.hash;
+    amount = request.amount;
+    alive = request.alive;
+    how = request.how;
+    scannedNative = request.scannedNative;
+    name = TDBID.ToStringDEBUG(request.record);
+    scannedUI = ArrayContains(this.m_scanned, h);
+    if s.requireScan && !scannedNative && !scannedUI {
+      this.Log("no claim " + name + " | not scanned | price " + IntToString(amount));
+      this.Note(7, (amount * s.alivePercent + 50) / 100, request.record, 0, "");
+      return;
     };
     alivePay = (amount * s.alivePercent + 50) / 100;
     deadPay = (amount * s.deadPercent + 50) / 100;
@@ -697,14 +839,14 @@ public class BountyLedger extends ScriptableSystem {
     if !alive {
       this.pendingDeceased += 1;
     };
-    ArrayPush(this.m_claimIDs, target.GetEntityID());
+    ArrayPush(this.m_claimIDs, request.id);
     ArrayPush(this.m_claimHashes, h);
     ArrayPush(this.m_claimAlivePay, alivePay);
     ArrayPush(this.m_claimDeadPay, deadPay);
     ArrayPush(this.m_claimIsAlive, alive);
-    this.PushClaimInfo(target.GetRecordID(), BountyLedger.ClassStars(target), 0);
-    this.Note(alive ? 1 : 2, pay, target.GetRecordID(), BountyLedger.ClassStars(target), "");
-    this.Log("claim " + name + " | " + IntToString(BountyLedger.ClassStars(target)) + " stars | price " + IntToString(amount) + " | " + how + " -> " + IntToString(pay) + " | scan native=" + (scannedNative ? "1" : "0") + " ui=" + (scannedUI ? "1" : "0") + " | batch " + IntToString(this.pendingTotal) + " eb / " + IntToString(this.pendingClaims) + ", due in " + FloatToStringPrec((this.dueAt - this.Now()) / 60.0, 1) + " game min");
+    this.PushClaimInfo(request.record, request.stars, 0);
+    this.Note(alive ? 1 : 2, pay, request.record, request.stars, "");
+    this.Log("claim " + name + " | " + IntToString(request.stars) + " stars | price " + IntToString(amount) + " | " + how + " -> " + IntToString(pay) + " | scan native=" + (scannedNative ? "1" : "0") + " ui=" + (scannedUI ? "1" : "0") + " | batch " + IntToString(this.pendingTotal) + " eb / " + IntToString(this.pendingClaims) + ", due in " + FloatToStringPrec((this.dueAt - this.Now()) / 60.0, 1) + " game min");
     this.ClaimLine(pay, alive ? "Bounty, brought in alive," : "Bounty, deceased,");
     this.ScheduleTick();
   }
@@ -975,11 +1117,14 @@ protected func RewardKiller(killer: wref<GameObject>, killType: gameKillType, is
 @wrapMethod(NPCPuppet)
 public const func CompileScannerChunks() -> Bool {
   let result: Bool = wrappedMethod();
-  let ledger: ref<BountyLedger> = BountyLedger.Get(this.GetGame());
-  if IsDefined(ledger) {
-    ledger.NoteScanned(this.GetEntityID());
+  let ledger: ref<BountyLedger>;
+  if this.csblScanQueued {
+    return result;
   };
-  CSBLWarrants.OnScanned(this);
+  ledger = BountyLedger.Get(this.GetGame());
+  if IsDefined(ledger) {
+    ledger.QueueScan(this);
+  };
   return result;
 }
 

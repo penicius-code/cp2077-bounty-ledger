@@ -1,15 +1,6 @@
--- Cyberslop CET Style 1.0.0 (2026-11-22): this mod's windows use the gold palette (cyberslop_palette.lua, colours only).
-do
-  local ok, palette = pcall(require, "cyberslop_palette")
-  if ok and type(palette) == "table" and type(registerForEvent) == "function" then
-    local reg = registerForEvent
-    registerForEvent = function(ev, fn)
-      if ev == "onDraw" and type(fn) == "function" then fn = palette.wrap("gold", fn) end
-      return reg(ev, fn)
-    end
-  end
-end
--- Cyberslop NCPD Uplink 1.0.0 (2026-11-06)
+-- Cyberslop NCPD Uplink 1.0.1 (2026-11-26; 1.0.0 2026-11-06)
+-- 1.0.1: totals, due time, lifetime figures and rates come from Bounty Ledger 1.2.0 getters: CET 1.38.1 reads a
+--   script system's fields as nil, so the transfer panel, lifetime line and rates showed 0.
 -- CET window for Cyberslop Bounty Ledger 1.1.4+: the NCPD claim file Regina Jones keeps for V.
 --   Transfer: open batch, countdown to the payout (game clock, plus a real-time estimate), progress bar.
 --   Claims on file: who, faction, stars, alive / deceased, pay, where the body is (a claimed-alive
@@ -23,7 +14,7 @@ end
 -- Read-only: calls only the Ledger's accessors.
 
 local Up = {
-  version = "1.0.0",
+  version = "1.0.1",
   overlay = false,
   pinned = false,
   data = nil,
@@ -76,6 +67,17 @@ local function call(obj, fn, ...)
   return nil
 end
 
+-- A script value: the getter method first (works on CET 1.38.1), the raw field only as a fallback.
+local function get(obj, method, field, default)
+  local v = call(obj, method)
+  if v == nil then
+    local ok, f = pcall(function() return obj[field] end)
+    if ok then v = f end
+  end
+  if v == nil then return default end
+  return v
+end
+
 -- Game seconds per real second, measured over ~10 s windows (pauses and menus excluded).
 local function measureScale(now)
   local t = os.clock()
@@ -99,16 +101,17 @@ local function poll()
     d.link = Game.GetStatsSystem():GetStatValue(player:GetEntityID(), gamedataStatType.HasLinkToBountySystem) > 0
   end)
 
-  d.total = ledger.pendingTotal or 0
-  d.count = ledger.pendingClaims or 0
-  d.dead = ledger.pendingDeceased or 0
-  d.dueAt = ledger.dueAt or 0
+  -- 1.0.1: CET 1.38.1 reads the ledger's script fields as nil (totals showed 0): Bounty Ledger 1.2.0 getters.
+  d.total = get(ledger, "GetPendingTotal", "pendingTotal", 0)
+  d.count = get(ledger, "GetPendingClaims", "pendingClaims", 0)
+  d.dead = get(ledger, "GetPendingDeceased", "pendingDeceased", 0)
+  d.dueAt = get(ledger, "GetDueAt", "dueAt", 0)
   d.openedAt = call(ledger, "BatchOpenedAt") or 0
-  d.lifePaid = ledger.lifetimePaid or 0
-  d.lifeClaims = ledger.lifetimeClaims or 0
-  d.lifeBatches = ledger.lifetimeBatches or 0
-  d.lastAt = ledger.lastPayoutAt or 0
-  d.lastAmount = ledger.lastPayoutAmount or 0
+  d.lifePaid = get(ledger, "GetLifetimePaid", "lifetimePaid", 0)
+  d.lifeClaims = get(ledger, "GetLifetimeClaims", "lifetimeClaims", 0)
+  d.lifeBatches = get(ledger, "GetLifetimeBatches", "lifetimeBatches", 0)
+  d.lastAt = get(ledger, "GetLastPayoutAt", "lastPayoutAt", 0)
+  d.lastAmount = get(ledger, "GetLastPayoutAmount", "lastPayoutAmount", 0)
 
   local n = call(ledger, "ClaimCount") or 0
   for i = 0, n - 1 do
@@ -151,8 +154,12 @@ local function poll()
   local s = sys("CyberslopBountyLedger.BountyLedgerSettings")
   if s then
     pcall(function()
-      d.rates = { alive = s.alivePercent, dead = s.deadPercent, mins = s.processingMinutes,
-                  p = { s.price1, s.price2, s.price3, s.price4, s.price5 }, enabled = s.enabled }
+      local p = {}
+      for i = 1, 5 do p[i] = call(s, "StarPrice", i) or s["price" .. i] or 0 end
+      local enabled = call(s, "IsEnabled")
+      if enabled == nil then enabled = s.enabled end
+      d.rates = { alive = get(s, "GetAlivePercent", "alivePercent", 0), dead = get(s, "GetDeadPercent", "deadPercent", 0),
+                  mins = get(s, "GetProcessingMinutes", "processingMinutes", 0), p = p, enabled = enabled }
     end)
   end
   Up.data = d

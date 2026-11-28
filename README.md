@@ -1,7 +1,7 @@
 # Bounty Ledger
 
 NCPD street bounties as a warrant system: price by wanted stars, more for bringing targets in alive, and a delayed payout in one batch, with an NCPD Uplink window for the claim file, for Cyberpunk 2077. Single-player only.
-Version: Bounty Ledger 1.1.7, NCPD Uplink 1.0.0 | For game version 2.5 | Status: 1.0.0 tested in game on 2.31 (prices, alive claim, death downgrade, scan rule and batching seen; the payout itself was not reached in that test); Bounty Ledger 1.1.7 and NCPD Uplink 1.0.0 in use in my game and working; no written test record
+Version: Bounty Ledger 1.2.0, NCPD Uplink 1.0.1 | For game version 2.5 | Status: 1.0.0 tested in game on 2.31 (prices, alive claim, death downgrade, scan rule and batching seen; the payout itself was not reached in that test); Bounty Ledger 1.1.7 and NCPD Uplink 1.0.0 in use in my game and working; Bounty Ledger 1.1.8 to 1.2.0 and NCPD Uplink 1.0.1 not run in game yet; no written test record
 
 **Download:** [latest release](https://github.com/penicius-code/cp2077-bounty-ledger/releases/latest) (zip; install steps below)
 
@@ -105,6 +105,7 @@ NCPD Uplink hotkeys in CET > Bindings, unbound by default: "Pin NCPD uplink" kee
 | Ledger 1.0.0 | 2.31 | Tested in game, 2026-11-06: prices, alive claim, death downgrade, scan rule and batching seen. The payout itself was not reached in that test. |
 | Ledger 1.0.1 to 1.1.6 | 2.31 | No written in-game test. |
 | Ledger 1.1.7, Uplink 1.0.0 | 2.5 | In use in the author's game and working (author's statement, 2026-11-24). No written test record. |
+| Ledger 1.1.8 to 1.2.0, Uplink 1.0.1 | 2.5 | Not run in game yet. Compile: 0 errors against the 2.5 script set. Uplink 1.0.1 checked with an offline mock that behaves like CET 1.38.1 (script fields read as nil, methods work): totals, claims, lifetime line and rates show; Uplink 1.0.0 fails the same mock. |
 | Screenshot | 2.5 | The window at the top was captured in game with the mod running. Its lifetime line shows 41 payouts and 117 claims, so batches have been paid in play; its journal shows claims lost because the target was not scanned. The version on screen was not recorded. |
 
 ## Compatibility
@@ -142,7 +143,7 @@ There is no recorded diagnosis story for this mod, so these are the design decis
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). Latest: Bounty Ledger 1.1.7 (2026-11-23): a warrant target killed by someone else no longer counts as the player's kill.
+See [CHANGELOG.md](CHANGELOG.md). Latest: Bounty Ledger 1.2.0 and NCPD Uplink 1.0.1 (2026-11-26): the Uplink window reads the ledger through getters, because newer CET builds return nil for a script system's fields.
 
 ## Credits and licence
 

@@ -2,6 +2,20 @@
 
 Bounty Ledger 1.0.0 to 1.1.6 and NCPD Uplink 1.0.0 were built on game version 2.31; 1.1.7 on 2.5. Only 1.0.0 has a written in-game test.
 
+## Bounty Ledger 1.2.0, NCPD Uplink 1.0.1 - 2026-11-26
+### Fixed
+- NCPD Uplink read the ledger's script fields straight from Lua. CET 1.38.1 returns nil for a script system's fields (methods still work), so the transfer panel, the lifetime line and the rates could stay empty. Bounty Ledger 1.2.0 adds read-only getters (pending total and claims, due time, lifetime figures, last payout, settings); Uplink 1.0.1 calls them and uses the raw field only as a fallback for an older ledger.
+
+## Bounty Ledger 1.1.9 - 2026-11-26
+### Fixed
+- A warrant target that streams back in gets its per-NPC flags back on its next scan.
+
+## Bounty Ledger 1.1.8 - 2026-11-26
+### Fixed
+- Thread safety. In game version 2.x the bounty, kill and scan hooks run on parallel job threads; pushing onto a shared list from there can corrupt it (a game crash was traced to such a push). The hooks now only zero the vanilla payout and mark the NPC itself (kill context, warrant flags); claims, death downgrades, scans and warrant outcomes are queued as requests and handled by the ledger's own system. Lawful arrest reads the NPC's own flags. Rules, prices, journal and the Uplink window are unchanged.
+
+Not run in game yet; compiles with 0 errors on 2.5.
+
 ## Bounty Ledger 1.1.7 - 2026-11-23
 ### Fixed
 - A warrant target killed by someone else (a gang, a police officer, a car) is no longer journalled as the player's kill; the NCPD Uplink shows it as "died (not by V)".
